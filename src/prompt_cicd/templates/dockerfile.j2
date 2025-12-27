@@ -1,0 +1,56 @@
+# Multi-stage Dockerfile for {{ runtime }} application
+
+# Build stage
+FROM {{ runtime }}:{{ runtime_version }}-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files first for better caching
+{% if package_manager_lock_file %}
+COPY package*.json ./
+{% if package_manager_lock_file == "yarn.lock" %}
+COPY yarn.lock ./
+{% endif %}
+{% else %}
+COPY package*.json ./
+{% endif %}
+
+# Install dependencies
+{% if build_tool == "yarn" %}
+RUN yarn install --frozen-lockfile
+{% else %}
+RUN npm ci --only=production
+{% endif %}
+
+# Copy source code
+COPY . .
+
+# Build the application
+{% if build_command %}
+RUN {{ build_command }}
+{% endif %}
+
+# Production stage
+FROM {{ runtime }}:{{ runtime_version }}-alpine AS production
+
+WORKDIR /app
+
+# Create non-root user for security
+RUN addgroup -g 1001 -S appgroup && \
+    adduser -u 1001 -S appuser -G appgroup
+
+# Copy built application from builder stage
+COPY --from=builder --chown=appuser:appgroup /app .
+
+USER appuser
+
+{% if expose_port %}
+EXPOSE {{ expose_port }}
+{% endif %}
+
+# Start the application
+{% if build_tool == "yarn" %}
+CMD ["yarn", "start"]
+{% else %}
+CMD ["npm", "start"]
+{% endif %}

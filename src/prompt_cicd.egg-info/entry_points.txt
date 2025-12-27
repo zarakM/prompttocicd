@@ -1,0 +1,2 @@
+[console_scripts]
+prompt-cicd = prompt_cicd.cli:main

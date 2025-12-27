@@ -1,0 +1,142 @@
+Metadata-Version: 2.4
+Name: prompt-cicd
+Version: 0.1.0
+Summary: AI-powered CI/CD pipeline generator - transform natural language into Dockerfiles and GitHub Actions
+Author: Zarak
+License: MIT
+Keywords: cicd,devops,ai,docker,github-actions
+Classifier: Development Status :: 3 - Alpha
+Classifier: Environment :: Console
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Software Development :: Build Tools
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: click>=8.0
+Requires-Dist: pydantic>=2.0
+Requires-Dist: jinja2>=3.0
+Requires-Dist: openai>=1.0
+Requires-Dist: pyyaml>=6.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Requires-Dist: ruff>=0.1.0; extra == "dev"
+
+# prompt-cicd
+
+**AI-powered CI/CD pipeline generator** - Transform natural language prompts into production-ready Dockerfiles and GitHub Actions workflows.
+
+## Features
+
+- 🧠 **Intent Interpretation** - LLM extracts structured DevOps intent from natural language
+- 🐳 **Dockerfile Generation** - Multi-stage builds with best practices
+- ⚡ **GitHub Actions** - Production-ready CI workflows
+- ✅ **Validation Layer** - Structural checks before file output
+- 🔒 **Security-First** - No shell execution, no secrets in code
+- 📋 **Dry-Run Mode** - Preview before writing
+
+## Installation
+
+```bash
+# Clone the repository
+git clone <repo-url>
+cd promptcicd
+
+# Install in development mode
+pip install -e .
+
+# Set your OpenAI API key
+export OPENAI_API_KEY="your-key-here"
+```
+
+## Usage
+
+### Generate CI/CD Configuration
+
+```bash
+# Basic usage
+prompt-cicd generate "Create CI/CD for NodeJS app"
+
+# Specify output directory
+prompt-cicd generate "Python FastAPI with Docker" --path ./myapp
+
+# Preview without writing files
+prompt-cicd generate "Go microservice" --dry-run
+
+# Verbose mode (shows intent JSON and reasoning)
+prompt-cicd generate "Java Spring Boot API" --verbose
+
+# Overwrite existing files
+prompt-cicd generate "NodeJS Express app" --path ./app --force
+```
+
+### View Intent Only
+
+```bash
+# Debug how prompts are interpreted
+prompt-cicd intent "Create CI/CD for NodeJS app"
+```
+
+### Options
+
+| Flag | Description |
+|------|-------------|
+| `--path, -p` | Target directory for output (default: current) |
+| `--dry-run, -n` | Preview without writing files |
+| `--force, -f` | Overwrite existing files |
+| `--verbose, -v` | Show intent JSON and reasoning |
+| `--no-docker` | Skip Dockerfile generation |
+| `--no-workflow` | Skip workflow generation |
+
+## Supported Languages
+
+| Language | Runtime | Build Tool | Default Version |
+|----------|---------|------------|-----------------|
+| NodeJS | node | npm/yarn | 18 |
+| Python | python | pip | 3.11 |
+| Go | go | go modules | 1.21 |
+| Java | java | maven | 17 |
+
+## Architecture
+
+```
+prompt → Intent Interpreter → JSON Intent → Generators → Validation → File Output
+             (LLM)              (Pydantic)    (Jinja2)     (Structural)
+```
+
+**Key Design Principle**: The LLM outputs *only* structured JSON. Templates handle file generation. This prevents hallucination and enables extensibility.
+
+## Project Structure
+
+```
+src/prompt_cicd/
+├── cli.py              # CLI entry point
+├── interpreter.py      # NL → JSON intent
+├── generator/
+│   ├── dockerfile.py   # Dockerfile generator
+│   └── github_actions.py
+├── templates/          # Jinja2 templates
+├── validator.py        # Structural validation
+└── writer.py           # File output
+```
+
+## Development
+
+```bash
+# Install dev dependencies
+pip install -e ".[dev]"
+
+# Run tests
+pytest tests/ -v
+
+# Lint
+ruff check src/
+```
+
+## License
+
+MIT

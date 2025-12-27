@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        {{ runtime }}-version: [{{ runtime_version }}]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+{% if runtime == "node" %}
+      - name: Setup Node.js ${{ '{{' }} matrix.node-version {{ '}}' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ '{{' }} matrix.node-version {{ '}}' }}
+          cache: '{{ build_tool or "npm" }}'
+{% elif runtime == "python" %}
+      - name: Setup Python ${{ '{{' }} matrix.python-version {{ '}}' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ '{{' }} matrix.python-version {{ '}}' }}
+          cache: 'pip'
+{% elif runtime == "go" %}
+      - name: Setup Go ${{ '{{' }} matrix.go-version {{ '}}' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ '{{' }} matrix.go-version {{ '}}' }}
+{% endif %}
+
+      - name: Install dependencies
+{% if runtime == "node" %}
+{% if build_tool == "yarn" %}
+        run: yarn install --frozen-lockfile
+{% else %}
+        run: npm ci
+{% endif %}
+{% elif runtime == "python" %}
+        run: pip install -r requirements.txt
+{% elif runtime == "go" %}
+        run: go mod download
+{% endif %}
+
+{% if build_command %}
+      - name: Build
+        run: {{ build_command }}
+{% endif %}
+
+{% if test_command %}
+      - name: Run tests
+        run: {{ test_command }}
+{% endif %}
