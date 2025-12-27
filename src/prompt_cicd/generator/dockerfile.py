@@ -51,6 +51,7 @@ class DockerfileGenerator(BaseGenerator):
             "test_command": intent.test_command,
             "expose_port": intent.expose_port,
             "package_manager_lock_file": intent.package_manager_lock_file,
+            "start_command": intent.start_command,
         }
         
         return self.template.render(**context)

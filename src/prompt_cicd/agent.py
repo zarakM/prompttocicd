@@ -1,207 +1,96 @@
-"""Artifact testing agent for validating generated CI/CD artifacts."""
+"""DevOps Agent using OpenAI Agents SDK."""
 
-import subprocess
-import shutil
-from dataclasses import dataclass, field
+import os
 from pathlib import Path
-from typing import Optional
+from agents import Agent, Runner
 
+from prompt_cicd.tools import (
+    generate_dockerfile,
+    generate_ci_yaml,
+    write_file,
+    read_file,
+    run_command,
+    validate_dockerfile,
+    validate_ci_yaml,
+)
 
-@dataclass
-class TestResult:
-    """Result of an artifact test."""
+INSTRUCTIONS = """You are an autonomous DevOps Agent.
+Your goal is to generate, validate, and fix CI/CD artifacts for the user's application.
 
-    artifact: str
-    success: bool
-    message: str
-    details: list[str] = field(default_factory=list)
+### Workflow:
 
+1. **Plan Phase**:
+   - Analyze the user's request.
+   - Plan which files need to be created (usually Dockerfile and CI YAML).
 
-class ArtifactTestingAgent:
-    """Test generated CI/CD artifacts by executing them."""
+2. **Generation Phase**:
+   - Use `generate_dockerfile` and `generate_ci_yaml` to create content.
+   - Use `write_file` to save them to the specified output directory.
+     - Dockerfile -> [output_dir]/Dockerfile
+     - CI YAML -> [output_dir]/.github/workflows/ci.yml
 
-    def __init__(self, verbose: bool = False):
-        """Initialize the testing agent.
+3. **Validation & Fix Loop**:
+   - For each generated file, run its validation tool:
+     - `validate_dockerfile` for Dockerfiles
+     - `validate_ci_yaml` for CI workflows
+   - If validation FAILS:
+     - Read the error message carefully.
+     - Use `write_file` to overwrite the file with a fixed version.
+     - Re-run validation.
+     - Repeat up to 3 times.
+   - If validation PASSES:
+     - Proceed to the next file or finish.
 
-        Args:
-            verbose: If True, print detailed output during tests.
-        """
-        self.verbose = verbose
+4. **Completion**:
+   - When all files are generated and validated (or max retries reached), report the final status.
+   - List the files created and their validation status.
 
-    def _run_command(
-        self, cmd: list[str], cwd: Optional[Path] = None
-    ) -> tuple[int, str, str]:
-        """Run a command and capture output.
+### Constraints:
+- Always use the tools provided.
+- Do not make up file content; use the generators.
+- If you cannot fix an error after 3 tries, report the failure and stop.
+"""
 
-        Args:
-            cmd: Command and arguments to run.
-            cwd: Working directory for the command.
+def create_agent(model: str = "gpt-4o") -> Agent:
+    """Create and configure the DevOps agent."""
+    return Agent(
+        name="DevOps Agent",
+        model=model,
+        instructions=INSTRUCTIONS,
+        tools=[
+            generate_dockerfile,
+            generate_ci_yaml,
+            write_file,
+            read_file,
+            run_command,
+            validate_dockerfile,
+            validate_ci_yaml,
+        ],
+    )
 
-        Returns:
-            Tuple of (return_code, stdout, stderr).
-        """
-        try:
-            result = subprocess.run(
-                cmd,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minute timeout
-            )
-            return result.returncode, result.stdout, result.stderr
-        except subprocess.TimeoutExpired:
-            return -1, "", "Command timed out after 5 minutes"
-        except FileNotFoundError:
-            return -1, "", f"Command not found: {cmd[0]}"
+def run_agent(prompt: str, output_dir: str, model: str = "gpt-4o", verbose: bool = False) -> str:
+    """Run the agent synchronously.
 
-    def test_dockerfile(
-        self, dockerfile_path: Path, image_name: str = "prompt-cicd-test"
-    ) -> TestResult:
-        """Test a Dockerfile by building an image.
+    Args:
+        prompt: User prompt.
+        output_dir: Output directory path.
+        model: Model to use.
+        verbose: Whether to print detailed logs (handled by SDK tracing if enabled).
 
-        Args:
-            dockerfile_path: Path to the Dockerfile.
-            image_name: Name for the test image.
-
-        Returns:
-            TestResult with build status.
-        """
-        if not dockerfile_path.exists():
-            return TestResult(
-                artifact="Dockerfile",
-                success=False,
-                message="Dockerfile not found",
-                details=[str(dockerfile_path)],
-            )
-
-        # Check if Docker is available
-        if not shutil.which("docker"):
-            return TestResult(
-                artifact="Dockerfile",
-                success=False,
-                message="Docker is not installed or not in PATH",
-                details=["Install Docker to test Dockerfile builds"],
-            )
-
-        # Build the image
-        build_context = dockerfile_path.parent
-        cmd = [
-            "docker",
-            "build",
-            "-t",
-            image_name,
-            "-f",
-            str(dockerfile_path),
-            str(build_context),
-        ]
-
-        if self.verbose:
-            print(f"Running: {' '.join(cmd)}")
-
-        returncode, stdout, stderr = self._run_command(cmd)
-
-        if returncode == 0:
-            # Clean up the test image
-            cleanup_cmd = ["docker", "rmi", image_name, "-f"]
-            self._run_command(cleanup_cmd)
-
-            return TestResult(
-                artifact="Dockerfile",
-                success=True,
-                message="Docker image built successfully",
-                details=["Image built and cleaned up"],
-            )
-        else:
-            # Extract error details
-            error_lines = []
-            for line in (stderr + stdout).split("\n"):
-                if "error" in line.lower() or "failed" in line.lower():
-                    error_lines.append(line.strip())
-
-            return TestResult(
-                artifact="Dockerfile",
-                success=False,
-                message="Docker build failed",
-                details=error_lines[:10] if error_lines else [stderr[:500]],
-            )
-
-    def test_github_actions(self, workflow_path: Path) -> TestResult:
-        """Test a GitHub Actions workflow using actionlint.
-
-        Args:
-            workflow_path: Path to the workflow YAML file.
-
-        Returns:
-            TestResult with validation status.
-        """
-        if not workflow_path.exists():
-            return TestResult(
-                artifact="GitHub Actions",
-                success=False,
-                message="Workflow file not found",
-                details=[str(workflow_path)],
-            )
-
-        # Check if actionlint is available
-        if not shutil.which("actionlint"):
-            return TestResult(
-                artifact="GitHub Actions",
-                success=False,
-                message="actionlint is not installed",
-                details=[
-                    "Install with: brew install actionlint",
-                    "Or: go install github.com/rhysd/actionlint/cmd/actionlint@latest",
-                ],
-            )
-
-        cmd = ["actionlint", str(workflow_path)]
-
-        if self.verbose:
-            print(f"Running: {' '.join(cmd)}")
-
-        returncode, stdout, stderr = self._run_command(cmd)
-
-        if returncode == 0:
-            return TestResult(
-                artifact="GitHub Actions",
-                success=True,
-                message="Workflow passed actionlint validation",
-            )
-        else:
-            # Parse actionlint output for issues
-            issues = []
-            for line in (stdout + stderr).split("\n"):
-                line = line.strip()
-                if line and not line.startswith("actionlint"):
-                    issues.append(line)
-
-            return TestResult(
-                artifact="GitHub Actions",
-                success=False,
-                message="Workflow has actionlint errors",
-                details=issues[:10],
-            )
-
-    def test_all(self, output_dir: Path) -> list[TestResult]:
-        """Test all artifacts in an output directory.
-
-        Args:
-            output_dir: Directory containing generated artifacts.
-
-        Returns:
-            List of TestResult for each artifact.
-        """
-        results = []
-        output_path = Path(output_dir)
-
-        # Test Dockerfile
-        dockerfile_path = output_path / "Dockerfile"
-        if dockerfile_path.exists():
-            results.append(self.test_dockerfile(dockerfile_path))
-
-        # Test GitHub Actions workflow
-        workflow_path = output_path / ".github" / "workflows" / "ci.yml"
-        if workflow_path.exists():
-            results.append(self.test_github_actions(workflow_path))
-
-        return results
+    Returns:
+        Final output from the agent.
+    """
+    agent = create_agent(model)
+    
+    # Ensure output directory exists before starting
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    
+    # Augment prompt with context
+    full_prompt = (
+        f"Goal: {prompt}\n"
+        f"Output Directory: {output_dir}\n"
+        "Please generate the artifacts, write them to disk, and validate them."
+    )
+    
+    result = Runner.run_sync(agent, full_prompt)
+    return result.final_output

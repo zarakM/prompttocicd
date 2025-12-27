@@ -1,14 +1,20 @@
 """CLI for prompt-cicd using Click."""
 
 import click
-from pathlib import Path
+import os
+import sys
 
 from prompt_cicd import __version__
+from prompt_cicd.agent import run_agent
+
+# Import kept for non-agent commands if we wanted to keep them, 
+# but per instructions we enter agent mode via `agent` command.
+# We can keep `generate` as the "classic" non-agent mode if preferred, 
+# or redirect it. For now, let's keep `generate` classic and `agent` for the new one.
 from prompt_cicd.interpreter import IntentInterpreter
 from prompt_cicd.generator import DockerfileGenerator, GitHubActionsGenerator
 from prompt_cicd.writer import ArtifactWriter
 from prompt_cicd.validator import ArtifactValidator
-from prompt_cicd.agent import ArtifactTestingAgent
 
 
 @click.group()
@@ -33,48 +39,77 @@ def main():
     help="Output directory for generated artifacts.",
 )
 @click.option(
+    "--api-key",
+    envvar="OPENAI_API_KEY",
+    help="OpenAI API key (or set OPENAI_API_KEY env var).",
+)
+def agent(prompt: str, output: str, api_key: str | None):
+    """Run autonomous DevOps agent (powered by OpenAI Agents SDK).
+    
+    The agent will plan, generate, validate, and fix artifacts automatically.
+    """
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+    
+    if "OPENAI_API_KEY" not in os.environ:
+        click.echo("❌ Error: OPENAI_API_KEY not found. Please set it via env var or --api-key.")
+        sys.exit(1)
+
+    click.echo("🤖 Starting Autonomous DevOps Agent...")
+    click.echo(f"   Prompt: {prompt}")
+    click.echo(f"   Output: {output}")
+    click.echo()
+
+    try:
+        final_output = run_agent(prompt, output)
+        click.echo("\n✅ Agent finished execution.")
+        click.echo("=" * 50)
+        click.echo(final_output)
+        click.echo("=" * 50)
+
+    except Exception as e:
+        click.echo(f"\n❌ Agent failed: {e}", err=True)
+        sys.exit(1)
+
+
+@main.command()
+@click.option(
+    "--prompt",
+    "-p",
+    required=True,
+    help="Natural language description.",
+)
+@click.option(
+    "--output",
+    "-o",
+    default="./output",
+    type=click.Path(),
+    help="Output directory.",
+)
+@click.option(
     "--validate/--no-validate",
     default=True,
     help="Validate generated artifacts.",
 )
 @click.option(
-    "--test/--no-test",
-    default=False,
-    help="Test artifacts by building Docker image and running actionlint.",
-)
-@click.option(
     "--api-key",
     envvar="OPENAI_API_KEY",
-    help="OpenAI API key (or set OPENAI_API_KEY env var).",
+    help="OpenAI API key.",
 )
-def generate(prompt: str, output: str, validate: bool, test: bool, api_key: str | None):
-    """Generate CI/CD artifacts from a natural language prompt."""
-    click.echo(f"🚀 Generating CI/CD artifacts...")
-    click.echo(f"   Prompt: {prompt[:50]}..." if len(prompt) > 50 else f"   Prompt: {prompt}")
-    click.echo()
-
-    # Parse the prompt into structured intent
-    click.echo("📝 Interpreting prompt...")
+def generate(prompt: str, output: str, validate: bool, api_key: str | None):
+    """(Classic) Generate CI/CD artifacts deterministically."""
+    # Classic implementation preserved for reference/fallback
+    click.echo(f"🚀 Generating CI/CD artifacts (Classic Mode)...")
+    
+    # ... (existing classic implementation logic)
     try:
         interpreter = IntentInterpreter(api_key=api_key)
         intent = interpreter.interpret(prompt)
     except Exception as e:
         click.echo(f"❌ Failed to interpret prompt: {e}", err=True)
-        raise click.Abort()
+        return
 
-    click.echo(f"   Language: {intent.language}")
-    click.echo(f"   Runtime: {intent.runtime} {intent.runtime_version}")
-    click.echo(f"   Build tool: {intent.build_tool or 'default'}")
-    click.echo()
-
-    # Set up generators
-    generators = [
-        DockerfileGenerator(),
-        GitHubActionsGenerator(),
-    ]
-
-    # Generate and write artifacts
-    click.echo("🔧 Generating artifacts...")
+    generators = [DockerfileGenerator(), GitHubActionsGenerator()]
     writer = ArtifactWriter(output)
     
     generated_files = []
@@ -86,70 +121,20 @@ def generate(prompt: str, output: str, validate: bool, test: bool, api_key: str 
         except Exception as e:
             click.echo(f"   ✗ {gen.filename}: {e}", err=True)
 
-    click.echo()
-
-    # Validate if requested
     if validate:
-        click.echo("🔍 Validating artifacts...")
         validator = ArtifactValidator()
-        
         for filename, path in generated_files:
             content = path.read_text()
-            
+            issues = []
             if filename == "Dockerfile":
                 issues = validator.validate_dockerfile(content)
             elif filename == "ci.yml":
                 issues = validator.validate_github_actions(content)
-            else:
-                issues = []
             
             if issues:
-                click.echo(f"   ⚠ {filename}:")
-                for issue in issues:
-                    click.echo(f"      - {issue}")
-            else:
-                click.echo(f"   ✓ {filename}")
-        
-        click.echo()
-
-    # Test if requested
-    if test:
-        _run_tests(Path(output))
+                click.echo(f"   ⚠ {filename}: {issues}")
 
     click.echo(f"✅ Done! Artifacts written to: {output}")
-
-
-def _run_tests(output_dir: Path, verbose: bool = False):
-    """Run artifact tests and display results."""
-    click.echo("🧪 Testing artifacts...")
-    agent = ArtifactTestingAgent(verbose=verbose)
-    results = agent.test_all(output_dir)
-
-    for result in results:
-        if result.success:
-            click.echo(f"   ✓ {result.artifact}: {result.message}")
-        else:
-            click.echo(f"   ✗ {result.artifact}: {result.message}")
-            for detail in result.details:
-                click.echo(f"      - {detail}")
-    
-    click.echo()
-
-
-@main.command()
-@click.argument("output_dir", type=click.Path(exists=True))
-@click.option("--verbose", "-v", is_flag=True, help="Show detailed output.")
-def test(output_dir: str, verbose: bool):
-    """Test generated artifacts in OUTPUT_DIR.
-    
-    Tests Dockerfile by building an image and GitHub Actions workflow using actionlint.
-    """
-    click.echo(f"🧪 Testing artifacts in: {output_dir}")
-    click.echo()
-    
-    _run_tests(Path(output_dir), verbose=verbose)
-    
-    click.echo("✅ Testing complete!")
 
 
 if __name__ == "__main__":

@@ -53,7 +53,7 @@ EXPOSE {{ expose_port }}
 {% if build_tool == "yarn" %}
 CMD ["yarn", "start"]
 {% elif build_tool == "pip" %}
-CMD ["python", "app.py"]
+CMD ["python", "{{ start_command }}"]
 {% else %}
 CMD ["npm", "start"]
 {% endif %}

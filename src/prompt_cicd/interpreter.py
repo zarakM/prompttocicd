@@ -37,7 +37,7 @@ class DevOpsIntent(BaseModel):
         description="CI provider (e.g., github-actions, gitlab-ci)",
     )
     start_command: Optional[str] = Field(
-        default=None, description="Command to start the application"
+        default=None, description="Name of the file to start the application"
     )
 
 
@@ -53,7 +53,7 @@ Extract the following information:
 - expose_port: The port the application listens on (e.g., 3000, 8080)
 - package_manager_lock_file: The lock file name (e.g., "package-lock.json", "yarn.lock")
 - ci_provider: The CI/CD provider (default: "github-actions")
-- start_command: The command to start the application (e.g., "npm start", "node server.js")
+- start_command: Name of the file to start the application (e.g., "scream.py", "example.js")
 
 Use sensible defaults based on the language/runtime if not explicitly specified:
 - Node.js: npm, package-lock.json, port 3000, "npm start"

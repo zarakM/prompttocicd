@@ -48,6 +48,7 @@ class GitHubActionsGenerator(BaseGenerator):
             "build_tool": intent.build_tool,
             "build_command": intent.build_command,
             "test_command": intent.test_command,
+            "start_command": intent.start_command,
         }
 
         return self.template.render(**context)
