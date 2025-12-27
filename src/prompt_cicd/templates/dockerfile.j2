@@ -18,6 +18,7 @@ COPY package*.json ./
 # Install dependencies
 {% if build_tool == "yarn" %}
 RUN yarn install --frozen-lockfile
+{% elif build_tool == "pip" %}
 {% else %}
 RUN npm ci --only=production
 {% endif %}
@@ -51,6 +52,8 @@ EXPOSE {{ expose_port }}
 # Start the application
 {% if build_tool == "yarn" %}
 CMD ["yarn", "start"]
+{% elif build_tool == "pip" %}
+CMD ["python", "app.py"]
 {% else %}
 CMD ["npm", "start"]
 {% endif %}
